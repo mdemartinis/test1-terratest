@@ -1,0 +1,73 @@
+---
+# This is the main CI pipeline. The purpose is to prepare the runner and test the Terraform code.
+# In order to test the Terraform code, we will connect to AWS and retrieve the tags for the
+# EC2 instance and S3 bucket. Then, those tags will be compared against a fixed set of tags.
+name: main-workflow-ci
+
+# The job will be automatically started on every push to dev branches and pull requests for the
+# main branch.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # First of all, we run Super-Linter to verify our code is correct and set with the best standards
+  linter:
+    # Name the Job
+    name: Lint Code
+    # Set the runner base
+    runs-on: ubuntu-latest
+    steps:
+      # It is required to checkout the code to be able to run linters
+      - name: Checkout Code
+        uses: actions/checkout@v2
+        with:
+          # Full git history is needed to get a proper list of changed files within super-linter
+          fetch-depth: 0
+      - name: Run Super-Linter
+        uses: github/super-linter@v4
+        env:
+          VALIDATE_ALL_CODEBASE: true
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Then, we prepare the new runner to execute the build, test and destroy of the infrastructure as code
+  test:
+    #Name the Job
+    name: Test Terraform
+    # Set this job to depend on linter
+    needs: ['linter']
+    # Set the runner base
+    runs-on: ubuntu-latest
+    steps:
+      # First, we checkout the code to execute it
+      - name: Checkout Code
+        uses: actions/checkout@v2
+      # Then, we configure Terraform in the runner using the setup-terraform GitHub Action
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+      # Verify that Terraform is correctly installed
+      - name: Terraform version
+        run: terraform version
+      # Next, we use the GitHub Action setup-go to configure Golang in the runner
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.17.1'
+      # Verify that Golang is correctly installed
+      - name: go version
+        run: go version
+      # We have to prepare go to run the test in the folder, initializing and downloading dependencies
+      - name: go init and tidy
+        run: |
+          cd ./terratest
+          go mod init github.com/${{github.repository}}
+          go mod tidy
+      # Finally, we execute Terratest
+      - name: test with Terratest
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }} 
+        run: |
+          cd ./terratest
+          go test
