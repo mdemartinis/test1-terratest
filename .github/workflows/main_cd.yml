@@ -1,0 +1,38 @@
+---
+# This is the main CD pipeline. The purpose is to deploy the solution permanently after the CI pipline
+# has run succesfully and the code has been merged into the main branch.
+# The workflow will prepare the runner to execute Terraform and deploy the resources in AWS.
+name: main-workflow-cd
+
+# The job will be automatically started on every push to main branch, after the pull request has been
+# merged successfully.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # Prepare the runner to execute and deploy infrastructure as code
+  deploy:
+    #Name the Job
+    name: Apply Terraform
+    # Set the runner base
+    runs-on: ubuntu-latest
+    steps:
+      # First, we checkout the code to execute it
+      - name: Checkout Code
+        uses: actions/checkout@v2
+      # Then, we configure Terraform in the runner using the setup-terraform GitHub Action
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+      # Verify that Terraform is correctly installed
+      - name: Terraform version
+        run: terraform version
+      # Finally, we execute Terraform init and apply
+      - name: Terraform init and apply
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }} 
+        run: |
+          cd ./terraform
+          terraform init -input=false
+          terraform apply -input=false -auto-approve
